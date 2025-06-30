@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Image Markup — Retouch Club</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #fff; display: flex; flex-direction: column; align-items: center; }
+    #canvasWrapper { position: relative; margin: 24px 0; }
+    canvas { border: 2px solid #888; background: #222; cursor: crosshair; }
+    #controls { margin-bottom: 20px; }
+    .btn { background: #222; color: #fff; border: 1px solid #555; padding: 8px 18px; margin-right: 10px; border-radius: 6px; cursor: pointer; }
+    .btn:hover { background: #333; }
+    input[type="file"] { color: #fff; }
+    #color, #size { margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h2>Image Markup для Retouch Club</h2>
+  <div id="controls">
+    <input type="file" id="imgLoader" accept="image/*" class="btn">
+    <label>Цвет пометок: <input type="color" id="color" value="#ff4444"></label>
+    <label>Толщина: <input type="number" id="size" value="4" min="1" max="50" style="width:40px"></label>
+    <button id="clear" class="btn">Очистить пометки</button>
+    <button id="download" class="btn">Скачать с пометками</button>
+  </div>
+  <div id="canvasWrapper">
+    <canvas id="canvas" width="600" height="400"></canvas>
+  </div>
+  <p style="max-width:480px; color:#aaa;">1. Загрузите изображение.<br>
+    2. Нарисуйте пометки.<br>
+    3. Скачайте файл или отправьте вручную.<br>
+    <b>Исходник и результат отправляются вручную (автоматизацию можно добавить позже).</b></p>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let img = new window.Image();
+    let drawing = false, lastX = 0, lastY = 0;
+
+    // Смена цвета и толщины линии
+    let strokeColor = document.getElementById('color').value;
+    let strokeWidth = parseInt(document.getElementById('size').value);
+
+    document.getElementById('color').onchange = (e) => strokeColor = e.target.value;
+    document.getElementById('size').onchange = (e) => strokeWidth = parseInt(e.target.value);
+
+    // Загрузка изображения
+    document.getElementById('imgLoader').addEventListener('change', function(e){
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt){
+        img.onload = function(){
+          // Масштабируем canvas под размер картинки (max 900x600)
+          let scale = Math.min(900/img.width, 600/img.height, 1);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
+        img.src = evt.target.result;
+      }
+      reader.readAsDataURL(file);
+    }, false);
+
+    // Рисование
+    canvas.addEventListener('mousedown', function(e){
+      drawing = true;
+      [lastX, lastY] = [e.offsetX, e.offsetY];
+    });
+    canvas.addEventListener('mousemove', function(e){
+      if (!drawing) return;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokeWidth;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(e.offsetX, e.offsetY);
+      ctx.stroke();
+      [lastX, lastY] = [e.offsetX, e.offsetY];
+    });
+    canvas.addEventListener('mouseup', ()=> drawing = false);
+    canvas.addEventListener('mouseleave', ()=> drawing = false);
+
+    // Очистка пометок (перерисовать исходник)
+    document.getElementById('clear').onclick = function(){
+      if (!img.src) return;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    };
+
+    // Скачать с пометками
+    document.getElementById('download').onclick = function(){
+      if (!img.src) return alert("Сначала загрузите изображение!");
+      let link = document.createElement('a');
+      link.download = 'markup.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    };
+  </script>
+</body>
+</html>
