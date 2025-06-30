@@ -13,30 +13,53 @@
     .controls { margin: 8px 0 14px 0; }
     .btn { background: #222; color: #fff; border: 1px solid #555; padding: 7px 16px; margin-right: 7px; border-radius: 6px; cursor: pointer; }
     .btn:hover { background: #333; }
-    input[type="file"] { color: #fff; }
+    input[type="file"], input[type="text"], input[type="email"] { color: #fff; }
     .comment { width: 100%; min-height: 40px; margin: 12px 0 0 0; background: #191919; color: #fff; border: 1px solid #444; border-radius: 6px; font-size: 15px; padding: 8px; resize: vertical;}
+    #sendAllBtn { margin-top: 28px; }
+    #resultMsg { margin:18px 0 0 0; color:#aff; }
+    .field-label { display: block; margin-bottom: 7px; }
+    .field-input { width: 360px; max-width: 90vw; padding: 8px; margin-bottom: 10px; background: #191919; border: 1px solid #444; border-radius: 6px; color: #fff; font-size: 17px; }
     @media (max-width:700px) {
       .img-card { width: 100%; min-width: 0; }
       canvas { width: 95vw !important; }
+      .field-input { width: 98vw; }
     }
   </style>
 </head>
 <body>
   <h2>Image Markup для Retouch Club</h2>
   <div class="container">
+    <label class="field-label">Ваше имя:
+      <input type="text" id="clientName" class="field-input" placeholder="Введите ваше имя" required>
+    </label>
+    <label class="field-label">Ваш email:
+      <input type="email" id="clientEmail" class="field-input" placeholder="Введите ваш email" required>
+    </label>
     <input type="file" id="imgLoader" accept="image/*" multiple class="btn">
+    <button class="btn" id="sendAllBtn">Отправить заказ</button>
+    <div id="resultMsg"></div>
   </div>
   <div id="gallery"></div>
   <p style="max-width:480px; color:#aaa;">
-    1. Загрузите несколько изображений.<br>
-    2. Для каждого — сделайте пометки, напишите текст ТЗ.<br>
-    3. Скачайте каждый файл с пометками (или все вручную).<br>
-    <b>Автоматизацию отправки можно добавить позже.</b>
+    1. Введите свои имя и email.<br>
+    2. Загрузите изображения.<br>
+    3. Сделайте пометки и напишите комментарии.<br>
+    4. Нажмите "Отправить заказ".<br>
+    Все файлы и ваши комментарии автоматически отправятся специалисту Retouch Club!
   </p>
+
+  <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
   <script>
+    (function() {
+      emailjs.init('iwEWH2w2pYjaywMFO');
+    })();
+
+    let uploadedFiles = [];
+
     function createCard(file, idx) {
       let card = document.createElement('div');
       card.className = 'img-card';
+      card.dataset.idx = idx;
 
       let h3 = document.createElement('h3');
       h3.textContent = `Изображение ${idx+1}: ${file.name}`;
@@ -65,13 +88,11 @@
       sizeInput.style.width = '40px';
       sizeLabel.appendChild(sizeInput);
 
-      // Clear & Download
+      // Clear
       let clearBtn = document.createElement('button');
       clearBtn.className = 'btn'; clearBtn.innerText = 'Очистить';
-      let dlBtn = document.createElement('button');
-      dlBtn.className = 'btn'; dlBtn.innerText = 'Скачать с пометками';
 
-      controls.append(colorLabel, sizeLabel, clearBtn, dlBtn);
+      controls.append(colorLabel, sizeLabel, clearBtn);
       card.appendChild(controls);
 
       // Canvas
@@ -140,20 +161,16 @@
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       };
 
-      // Скачать
-      dlBtn.onclick = function(){
-        if (!img.src) return alert("Сначала загрузите изображение!");
-        let link = document.createElement('a');
-        link.download = file.name.replace(/\.\w+$/, '') + '_markup.png';
-        link.href = canvas.toDataURL();
-        link.click();
-      };
+      // Сохраняем ссылку на оригинальный файл
+      card.dataset.origFileIdx = uploadedFiles.length;
+      uploadedFiles.push(file);
 
       return card;
     }
 
     document.getElementById('imgLoader').addEventListener('change', function(e){
       let files = Array.from(e.target.files);
+      uploadedFiles = []; // сбрасываем для новой загрузки
       let gallery = document.getElementById('gallery');
       gallery.innerHTML = ''; // очистить галерею перед новой загрузкой
       files.forEach((file, idx) => {
@@ -162,6 +179,78 @@
         gallery.appendChild(card);
       });
     });
+
+    document.getElementById('sendAllBtn').onclick = function() {
+      let cards = document.querySelectorAll('.img-card');
+      let name = document.getElementById('clientName').value.trim();
+      let email = document.getElementById('clientEmail').value.trim();
+
+      if (!name || !email) {
+        alert('Пожалуйста, заполните ваше имя и email!');
+        return;
+      }
+
+      if (!cards.length) {
+        alert('Сначала загрузите хотя бы одно изображение!');
+        return;
+      }
+
+      // Проверка email
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        alert('Пожалуйста, введите корректный email!');
+        return;
+      }
+
+      let allComments = [];
+      let allFiles = [];
+      let pending = 0;
+
+      cards.forEach((card, idx) => {
+        // исходник
+        let origFile = uploadedFiles[card.dataset.origFileIdx];
+        if (origFile) allFiles.push(origFile);
+
+        // canvas -> markup image
+        let canvas = card.querySelector('canvas');
+        if (canvas && origFile) {
+          pending++;
+          canvas.toBlob(blob => {
+            let markFile = new File([blob], origFile.name.replace(/\.\w+$/, '') + '_markup.png', {type: 'image/png'});
+            allFiles.push(markFile);
+            pending--;
+            if (pending === 0) sendEmail();
+          });
+        } else {
+          pending--;
+        }
+
+        // comment
+        let text = card.querySelector('.comment')?.value || '';
+        allComments.push(`Комментарий к ${origFile ? origFile.name : 'фото №'+(idx+1)}:\n${text}`);
+      });
+
+      // если все toBlob уже завершились
+      if (pending === 0) sendEmail();
+
+      function sendEmail() {
+        document.getElementById('resultMsg').textContent = 'Отправка...';
+        let formData = {
+          title: 'Новый заказ через сайт',
+          name: name,
+          email: email,
+          message: allComments.join('\n\n')
+        };
+        emailjs.send('service_z6vtvbs', 'template_4egl7rej', formData, 'iwEWH2w2pYjaywMFO', allFiles)
+        .then(
+          function(response) {
+            document.getElementById('resultMsg').textContent = 'Заказ успешно отправлен!';
+          },
+          function(error) {
+            document.getElementById('resultMsg').textContent = 'Ошибка отправки: ' + error.text;
+          }
+        );
+      }
+    };
   </script>
 </body>
 </html>
